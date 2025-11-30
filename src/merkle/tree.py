@@ -13,7 +13,7 @@ Key optimizations:
 - Duplicate last node for odd counts (exact byte copy)
 """
 
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 import sys
 
 from merkle.node import MerkleNode
@@ -233,6 +233,93 @@ class MerkleTree:
 
         # Compare with stored leaf hash
         return data_hash == self._leaf_hashes[index]
+
+    def get_proof(self, index: int, data: Optional[Any] = None) -> 'MerkleProof':
+        """
+        Generate a Merkle proof for a leaf at the given index.
+
+        This method rebuilds the tree path on demand from stored leaf hashes,
+        collecting sibling hashes along the way. This is the hybrid storage
+        trade-off: we save memory but pay a small cost during proof generation.
+
+        Args:
+            index: Index of the leaf to prove (0-based)
+            data: Optional data to include in proof (if None, proof won't contain data)
+
+        Returns:
+            MerkleProof object containing the proof path
+
+        Raises:
+            IndexError: If index is out of range
+
+        Time complexity: O(n) for rebuild + O(log n) for path = O(n)
+        Space complexity: O(n) for temporary tree + O(log n) for path
+
+        Example:
+            >>> tree = MerkleTree(["data1", "data2", "data3", "data4"])
+            >>> proof = tree.get_proof(2, "data3")
+            >>> proof.verify()
+            True
+        """
+        # Import here to avoid circular dependency
+        from merkle.proof import MerkleProof
+
+        # Validate index
+        if index < 0 or index >= len(self._leaf_hashes):
+            raise IndexError(f"Leaf index {index} out of range [0, {len(self._leaf_hashes)})")
+
+        # Start with leaf hashes as the current level
+        current_level = self._leaf_hashes.copy()
+        target_index = index
+        proof_path: List[Tuple[bytes, bool]] = []
+
+        # Rebuild tree bottom-up, tracking the target and collecting siblings
+        while len(current_level) > 1:
+            next_level = []
+
+            # Process pairs to build parent level
+            for i in range(0, len(current_level), 2):
+                left_hash = current_level[i]
+
+                # Handle odd number of nodes (duplicate last)
+                if i + 1 >= len(current_level):
+                    right_hash = current_level[i]
+                else:
+                    right_hash = current_level[i + 1]
+
+                # Check if our target is in this pair
+                if i == target_index or i + 1 == target_index:
+                    # Record the sibling
+                    if target_index == i:
+                        # Target is on the left, sibling is on the right
+                        sibling_hash = right_hash
+                        is_left = False  # Sibling is on the right
+                    else:
+                        # Target is on the right, sibling is on the left
+                        sibling_hash = left_hash
+                        is_left = True  # Sibling is on the left
+
+                    proof_path.append((sibling_hash, is_left))
+
+                # Create parent hash
+                parent_hash = hash_pair(left_hash, right_hash)
+                next_level.append(parent_hash)
+
+            # Move to next level
+            current_level = next_level
+            # Update target index for parent level
+            target_index = target_index // 2
+
+        # At this point, current_level should contain only the root hash
+        # and we've collected all siblings along the path
+
+        # Create and return the proof
+        return MerkleProof(
+            leaf_data=data,
+            leaf_index=index,
+            proof_path=proof_path,
+            root_hash=self._root_hash
+        )
 
     def get_memory_usage(self) -> Dict[str, Any]:
         """
