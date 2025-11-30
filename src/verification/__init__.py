@@ -8,5 +8,6 @@ This module provides components for:
 """
 
 from verification.integrity_checker import IntegrityChecker
+from verification.tamper_detector import TamperDetector
 
-__all__ = ['IntegrityChecker']
+__all__ = ['IntegrityChecker', 'TamperDetector']
