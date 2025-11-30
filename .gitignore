@@ -51,3 +51,6 @@ Thumbs.db
 # Claude plans
 .claude
 CLAUDE.md
+WORKDONE.md
+requirements.txt
+PLAN.md
